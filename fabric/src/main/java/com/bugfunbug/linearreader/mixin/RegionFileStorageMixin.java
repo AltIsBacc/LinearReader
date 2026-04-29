@@ -21,7 +21,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import org.jetbrains.annotations.Nullable;
 import java.io.*;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -100,10 +99,9 @@ public abstract class RegionFileStorageMixin {
         Path linearPath = folder.resolve(
                 "r." + pos.getRegionX() + "." + pos.getRegionZ() + ".linear");
 
-        if (existingOnly && !Files.exists(linearPath)) return null;
-
-        Files.createDirectories(folder);
-        // Constructor is now instant — no disk I/O. Loading happens lazily on first access.
+        // Always cache a cheap shell, even for read-only probes on absent regions.
+        // That keeps Files.exists/load checks off the coarse storage lock and avoids
+        // repeated synchronized misses while generating into brand-new terrain.
         LinearRegionFile region = new LinearRegionFile(linearPath, sync);
         linearCache.putAndMoveToFirst(key, region);
         return region;

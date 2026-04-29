@@ -5,6 +5,7 @@
 	"compatibilityLevel": "JAVA_17",
 	"refmap": "linearreader.refmap.json",
 	"mixins": [
+		"MinecraftServerMixin",
 		"RegionFileStorageMixin",
 		"RegionFileMixin"
 	],

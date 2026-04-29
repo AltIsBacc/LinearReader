@@ -337,6 +337,16 @@ public final class LinearRuntime {
         });
     }
 
+    public static void queueDirtyRegionsForSave() {
+        LinearRuntime instance = INSTANCE;
+        if (instance == null
+                || instance.flushExecutor == null
+                || instance.flushExecutor.isShutdown()) {
+            return;
+        }
+        instance.onLevelSave();
+    }
+
     public void onServerStarting(MinecraftServer server) {
         dedicatedServer = server.isDedicatedServer();
         initExecutor();
@@ -395,7 +405,7 @@ public final class LinearRuntime {
     }
 
     public void onLevelSave() {
-        if (flushExecutor == null) return;
+        if (flushExecutor == null || flushExecutor.isShutdown()) return;
 
         int queued = 0;
         for (LinearRegionFile region : LinearRegionFile.ALL_OPEN) {
@@ -415,7 +425,7 @@ public final class LinearRuntime {
     }
 
     public void onServerTick() {
-        if (flushExecutor == null) return;
+        if (flushExecutor == null || flushExecutor.isShutdown()) return;
 
         tickCounter++;
         if (tickCounter % 20 == 0) {
