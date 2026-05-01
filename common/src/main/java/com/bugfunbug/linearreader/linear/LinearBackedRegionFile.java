@@ -153,14 +153,31 @@ public final class LinearBackedRegionFile extends RegionFile {
      * format stored by the vanilla write path.
      */
     public void writeFromBuffer(ChunkPos pos, ByteBuffer buf) throws IOException {
-        // Use absolute reads so we don't depend on the buffer's current position.
-        int  header          = buf.getInt(0);          // compressedLen + 1
-        int  compressionType = buf.get(4) & 0xFF;
-        int  compressedLen   = header - 1;
+        IdleRecompressor.notifyIO();
+
+        // C2ME can hand us a windowed buffer; decode from the caller-visible range,
+        // not from absolute index 0 of the underlying storage.
+        ByteBuffer chunkBuf = buf.duplicate();
+        if (chunkBuf.remaining() < 5) {
+            throw new IOException("[LinearReader] Chunk buffer too short for " + pos
+                    + ": " + chunkBuf.remaining() + " byte(s)");
+        }
+
+        int header = chunkBuf.getInt(); // compressedLen + 1
+        if (header <= 0) {
+            throw new IOException("[LinearReader] Invalid chunk header length for " + pos + ": " + header);
+        }
+
+        int compressionType = chunkBuf.get() & 0xFF;
+        int compressedLen = header - 1;
+        if (compressedLen > chunkBuf.remaining()) {
+            throw new IOException("[LinearReader] Chunk buffer truncated for " + pos
+                    + ": expected " + compressedLen + " compressed byte(s), found "
+                    + chunkBuf.remaining());
+        }
 
         byte[] compressed = new byte[compressedLen];
-        buf.position(5);
-        buf.get(compressed);
+        chunkBuf.get(compressed);
 
         long t = System.nanoTime();
         try (DataOutputStream dos = linear.write(pos)) {

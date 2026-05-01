@@ -24,8 +24,8 @@ import java.nio.ByteBuffer;
  *       {@link #interceptLinearWrite}.</li>
  *   <li><b>Backlog path</b> ({@code writeChunk}, line ~347, triggered under
  *       memory pressure) — calls {@code RegionFile.clear(ChunkPos)} before
- *       writing, to clear the old sector entry. Handled by
- *       {@link #interceptLinearClear}.</li>
+ *       writing, to clear the old sector entry. Linear storage has no sector
+ *       table, so we cancel that call in {@link #interceptLinearClear}.</li>
  * </ol>
  * Both intercepts are no-ops for normal {@code RegionFile} instances — they
  * only activate when {@code this} is a {@link LinearBackedRegionFile}.
@@ -67,9 +67,9 @@ public class RegionFileMixin {
      * {@code Unsafe.allocateInstance}, so {@code f_63625_} (the sector IntBuffer)
      * is null — any unhandled RegionFile method call that reads it will NPE.
      *
-     * <p>We cancel the call and delegate to
-     * {@link LinearBackedRegionFile#clearChunk} which properly removes the
-     * chunk entry from the in-memory {@code LinearRegionFile}.
+     * <p>Linear storage overwrites chunk payloads directly and has no sector
+     * table to clear first, so the vanilla pre-clear step would only create a
+     * transient "chunk missing" window before the replacement write lands.
      */
     @Inject(
             method = "clear(Lnet/minecraft/world/level/ChunkPos;)V",
@@ -77,8 +77,10 @@ public class RegionFileMixin {
             cancellable = true
     )
     private void interceptLinearClear(ChunkPos pos, CallbackInfo ci) {
-        if (!((Object) this instanceof LinearBackedRegionFile backed)) return;
-        backed.clearChunk(pos);
+        if (!((Object) this instanceof LinearBackedRegionFile)) return;
+        // Linear storage has no sector table to clear ahead of a rewrite.
+        // Deleting the live chunk entry here creates a race window where readers
+        // can observe the chunk as missing before the replacement write lands.
         ci.cancel();
     }
 }
