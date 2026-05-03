@@ -5,6 +5,7 @@ import net.minecraftforge.common.ForgeConfigSpec;
 import net.minecraftforge.fml.loading.FMLPaths;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -41,7 +42,7 @@ public final class ForgeLinearConfig {
 
     static {
         ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
-        builder.comment("LinearReader - server-side settings").push("general");
+        builder.comment("LinearReader - server-side settings");
 
         COMPRESSION_LEVEL = builder
                 .comment(
@@ -174,7 +175,6 @@ public final class ForgeLinearConfig {
                 )
                 .defineInRange("recompressMinFreeRamPercent", 15, 5, 50);
 
-        builder.pop();
         SPEC = builder.build();
     }
 
@@ -267,9 +267,16 @@ public final class ForgeLinearConfig {
                 "before trying again.");
 
         Path path = configPath();
+        String text = String.join("\n", lines) + "\n";
         try {
             Files.createDirectories(path.getParent());
-            Files.write(path, lines);
+            if (Files.exists(path)) {
+                String existing = Files.readString(path, StandardCharsets.UTF_8);
+                if (existing.equals(text)) {
+                    return;
+                }
+            }
+            Files.writeString(path, text, StandardCharsets.UTF_8);
         } catch (IOException e) {
             LinearRuntime.LOGGER.warn(
                     "[LinearReader] Failed to rewrite Forge/NeoForge config {}: {}",
