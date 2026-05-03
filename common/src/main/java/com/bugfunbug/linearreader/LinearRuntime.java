@@ -56,7 +56,6 @@ public final class LinearRuntime {
     private static final AtomicInteger FLUSH_THREAD_N = new AtomicInteger(0);
     private static final long INTEGRATED_FLUSH_STARTUP_GRACE_NS = 20_000_000_000L;
     private static final long DEDICATED_FLUSH_STARTUP_GRACE_NS = 5_000_000_000L;
-    private static final long INTEGRATED_BACKGROUND_FLUSH_EXTRA_IDLE_NS = 60_000_000_000L;
 
     /**
      * Queue of dirty regions waiting to be flushed.
@@ -255,9 +254,8 @@ public final class LinearRuntime {
 
     private boolean shouldQueueBackgroundFlush(LinearRegionFile region, long nowNs) {
         if (!region.shouldBackgroundFlush(nowNs)) return false;
-        if (dedicatedServer) return true;
-        if (!flushQueue.isEmpty() || !inFlightFlushes.isEmpty()) return false;
-        return nowNs - region.lastMutationTimeNs() >= INTEGRATED_BACKGROUND_FLUSH_EXTRA_IDLE_NS;
+        if (!dedicatedServer) return false;
+        return true;
     }
 
     private void initExecutor() {
@@ -284,6 +282,10 @@ public final class LinearRuntime {
 
         LinearRuntime instance = INSTANCE;
         if (instance == null || instance.flushExecutor == null) return configured;
+
+        if (!instance.dedicatedServer) {
+            return Math.max(1, Math.min(configured, 2));
+        }
 
         if (DHPregenMonitor.isPregenActive()) {
             return Math.max(1, Math.min(configured, 2));
@@ -406,6 +408,13 @@ public final class LinearRuntime {
 
     public void onLevelSave() {
         if (flushExecutor == null || flushExecutor.isShutdown()) return;
+        if (!dedicatedServer) {
+            // Integrated servers share a JVM with the client render thread.
+            // Draining full-region compression work in the background causes
+            // visible multi-second stalls while exploring, so singleplayer
+            // relies on vanilla save barriers instead of async save draining.
+            return;
+        }
 
         int queued = 0;
         for (LinearRegionFile region : LinearRegionFile.ALL_OPEN) {
