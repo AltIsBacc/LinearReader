@@ -129,7 +129,7 @@ public final class LinearBackedRegionFile extends RegionFile {
     /**
      * Delegates to {@link LinearRegionFile#clearChunk}.
      * Called by {@code RegionFileMixin.interceptLinearClear} when c2me invokes
-     * {@code RegionFile.clear(ChunkPos)} on this instance during a backlog flush.
+     * the direct chunk-delete path on this instance.
      */
     public void clearChunk(ChunkPos pos) {
         linear.clearChunk(pos);

@@ -490,7 +490,7 @@ public class LinearRegionFile {
 
     /**
      * Removes a chunk entry from this region.
-     * Called when c2me's backlog flush invokes RegionFile.clear(ChunkPos).
+     * Called when c2me's direct delete path invokes RegionFile.clear(ChunkPos).
      */
     public void clearChunk(ChunkPos pos) {
         try {

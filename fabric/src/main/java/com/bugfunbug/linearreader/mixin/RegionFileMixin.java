@@ -16,16 +16,16 @@ import java.nio.ByteBuffer;
  * {@link LinearBackedRegionFile} instances.
  *
  * <h3>Why two intercepts?</h3>
- * c2me's {@code C2MEStorageThread} has two write paths:
+ * c2me's {@code C2MEStorageThread} has two direct RegionFile paths:
  * <ol>
  *   <li><b>Async path</b> ({@code lambda$writeChunk$13}, line ~383) — calls
  *       {@code IRegionFile.invokeWriteChunk} which maps to the private
  *       {@code write(ChunkPos, ByteBuffer)} method. Handled by
  *       {@link #interceptLinearWrite}.</li>
- *   <li><b>Backlog path</b> ({@code writeChunk}, line ~347, triggered under
- *       memory pressure) — calls {@code RegionFile.clear(ChunkPos)} before
- *       writing, to clear the old sector entry. Linear storage has no sector
- *       table, so we cancel that call in {@link #interceptLinearClear}.</li>
+ *   <li><b>Delete path</b> ({@code writeChunk(..., null)}) — calls the
+ *       vanilla delete/clear method on the direct {@code RegionFile} handle.
+ *       We forward that into {@link LinearBackedRegionFile#clearChunk} in
+ *       {@link #interceptLinearClear}.</li>
  * </ol>
  * Both intercepts are no-ops for normal {@code RegionFile} instances — they
  * only activate when {@code this} is a {@link LinearBackedRegionFile}.
@@ -58,18 +58,14 @@ public class RegionFileMixin {
     }
 
     /**
-     * Intercepts c2me's backlog write path.
+     * Intercepts c2me's direct delete path.
      *
-     * <p>Under memory pressure, c2me flushes its write backlog via
-     * {@code C2MEStorageThread.writeBacklog} → {@code writeChunk}, which calls
-     * {@code RegionFile.clear(ChunkPos)} to remove the old sector entry before
-     * writing the new one.  Our {@link LinearBackedRegionFile} was created with
-     * {@code Unsafe.allocateInstance}, so {@code f_63625_} (the sector IntBuffer)
-     * is null — any unhandled RegionFile method call that reads it will NPE.
-     *
-     * <p>Linear storage overwrites chunk payloads directly and has no sector
-     * table to clear first, so the vanilla pre-clear step would only create a
-     * transient "chunk missing" window before the replacement write lands.
+     * <p>Across the C2ME rewrite-era branches we inspected, chunk deletion goes
+     * through the direct {@code RegionFile} handle that {@code getRegionFile()}
+     * returns, using Yarn names like {@code delete} or older obfuscated names
+     * that map back to Mojang's {@code clear(ChunkPos)}. Our
+     * {@link LinearBackedRegionFile} was created with {@code Unsafe}, so the
+     * vanilla sector tables are uninitialized and must never run.
      */
     @Inject(
             method = "clear(Lnet/minecraft/world/level/ChunkPos;)V",
@@ -77,10 +73,8 @@ public class RegionFileMixin {
             cancellable = true
     )
     private void interceptLinearClear(ChunkPos pos, CallbackInfo ci) {
-        if (!((Object) this instanceof LinearBackedRegionFile)) return;
-        // Linear storage has no sector table to clear ahead of a rewrite.
-        // Deleting the live chunk entry here creates a race window where readers
-        // can observe the chunk as missing before the replacement write lands.
+        if (!((Object) this instanceof LinearBackedRegionFile backed)) return;
+        backed.clearChunk(pos);
         ci.cancel();
     }
 }

@@ -20,6 +20,7 @@ import java.util.zip.DeflaterOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class LinearBackedRegionFileTest {
 
@@ -59,6 +60,29 @@ class LinearBackedRegionFileTest {
                 CompoundTag actual = NbtIo.read(in);
                 assertNotNull(actual);
                 assertEquals(expected, actual);
+            }
+        } finally {
+            LinearRegionFile.ALL_OPEN.remove(region);
+            region.releaseChunkData();
+        }
+    }
+
+    @Test
+    void clearsChunkThroughLinearWrapper() throws IOException {
+        Path file = tempDir.resolve("r.0.0.linear");
+        LinearRegionFile region = new LinearRegionFile(file, false);
+        try {
+            LinearBackedRegionFile backed = LinearBackedRegionFile.create(region);
+            ChunkPos pos = new ChunkPos(2, 3);
+
+            try (DataOutputStream out = backed.getChunkDataOutputStream(pos)) {
+                NbtIo.write(testChunk(pos.x, pos.z), out);
+            }
+
+            backed.clearChunk(pos);
+
+            try (DataInputStream in = region.read(pos)) {
+                assertNull(in);
             }
         } finally {
             LinearRegionFile.ALL_OPEN.remove(region);
