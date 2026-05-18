@@ -1,84 +1,170 @@
-import org.gradle.internal.os.OperatingSystem
-
 plugins {
     id 'base'
 }
 
-def wrapperCommand = { String taskName ->
-    if (OperatingSystem.current().isWindows()) {
-        return ['cmd', '/c', 'gradlew.bat', taskName]
-    }
-    return ['./gradlew', taskName]
-}
-
-def registerChildTask = { String name, String childDir, String childTask ->
-    tasks.register(name, Exec) {
-        group = 'linearreader'
-        description = "Runs ${childTask} in ${childDir}."
-        workingDir = file(childDir)
-        commandLine(wrapperCommand(childTask))
-    }
-}
-
-registerChildTask('compileFabric', 'fabric', 'compileJava')
-registerChildTask('compileForgeNeoForge', 'forge-neoforge', 'compileJava')
-registerChildTask('buildFabric', 'fabric', 'build')
-registerChildTask('buildForgeNeoForge', 'forge-neoforge', 'build')
-registerChildTask('cleanFabric', 'fabric', 'clean')
-registerChildTask('cleanForgeNeoForge', 'forge-neoforge', 'clean')
-registerChildTask('testFabric', 'fabric', 'test')
-registerChildTask('testForgeNeoForge', 'forge-neoforge', 'test')
-registerChildTask('generateTestCorpus', 'fabric', 'generateTestCorpus')
+def fabric1201Target = project(':targets:fabric_1_20_to_1_20_1')
+def fabric1202To1214Target = project(':targets:fabric_1_20_2_to_1_21_4')
+def forge1201Target = project(':targets:forge_1_20_to_1_20_1')
 
 tasks.register('compileAll') {
     group = 'linearreader'
-    description = 'Compiles both loader targets.'
-    dependsOn 'compileFabric', 'compileForgeNeoForge'
+    description = 'Compiles all live targets.'
+    dependsOn fabric1201Target.tasks.named('compileJava')
+    dependsOn fabric1202To1214Target.tasks.named('compileJava')
+    dependsOn forge1201Target.tasks.named('compileJava')
+}
+
+tasks.register('compileFabric') {
+    group = 'linearreader'
+    description = 'Compiles all live Fabric targets.'
+    dependsOn fabric1201Target.tasks.named('compileJava')
+    dependsOn fabric1202To1214Target.tasks.named('compileJava')
+}
+
+tasks.register('compileForgeNeoForge') {
+    group = 'linearreader'
+    description = 'Legacy alias for compileForge.'
+    dependsOn tasks.named('compileForge')
+}
+
+tasks.register('compileForge') {
+    group = 'linearreader'
+    description = 'Compiles the Forge target.'
+    dependsOn forge1201Target.tasks.named('compileJava')
+}
+
+tasks.register('buildFabric') {
+    group = 'linearreader'
+    description = 'Builds all live Fabric targets.'
+    dependsOn fabric1201Target.tasks.named('build')
+    dependsOn fabric1202To1214Target.tasks.named('build')
+}
+
+tasks.register('buildForgeNeoForge') {
+    group = 'linearreader'
+    description = 'Legacy alias for buildForge.'
+    dependsOn tasks.named('buildForge')
 }
 
 tasks.register('buildForge') {
     group = 'linearreader'
-    description = 'Alias for buildForgeNeoForge.'
-    dependsOn 'buildForgeNeoForge'
+    description = 'Builds the Forge target.'
+    dependsOn forge1201Target.tasks.named('build')
+}
+
+tasks.register('cleanFabric') {
+    group = 'linearreader'
+    description = 'Cleans all live Fabric targets.'
+    dependsOn fabric1201Target.tasks.named('clean')
+    dependsOn fabric1202To1214Target.tasks.named('clean')
+}
+
+tasks.register('cleanForgeNeoForge') {
+    group = 'linearreader'
+    description = 'Legacy alias for cleanForge.'
+    dependsOn tasks.named('cleanForge')
+}
+
+tasks.register('cleanForge') {
+    group = 'linearreader'
+    description = 'Cleans the Forge target.'
+    dependsOn forge1201Target.tasks.named('clean')
+}
+
+tasks.register('testFabric') {
+    group = 'linearreader'
+    description = 'Runs all live Fabric target tests.'
+    dependsOn fabric1201Target.tasks.named('test')
+    dependsOn fabric1202To1214Target.tasks.named('test')
+}
+
+tasks.register('testForgeNeoForge') {
+    group = 'linearreader'
+    description = 'Legacy alias for testForge.'
+    dependsOn tasks.named('testForge')
+}
+
+tasks.register('testForge') {
+    group = 'linearreader'
+    description = 'Runs the Forge target tests.'
+    dependsOn forge1201Target.tasks.named('test')
+}
+
+tasks.register('generateTestCorpus') {
+    group = 'linearreader'
+    description = 'Regenerates the shared .linear test corpus.'
+    dependsOn fabric1201Target.tasks.named('generateTestCorpus')
 }
 
 tasks.register('buildAll') {
     group = 'linearreader'
-    description = 'Builds both loader targets.'
-    dependsOn 'buildFabric', 'buildForgeNeoForge'
+    description = 'Builds all live targets.'
+    dependsOn fabric1201Target.tasks.named('build')
+    dependsOn fabric1202To1214Target.tasks.named('build')
+    dependsOn forge1201Target.tasks.named('build')
 }
 
 tasks.register('testAll') {
     group = 'linearreader'
-    description = 'Runs the shared storage test suite in all loader environments.'
-    dependsOn 'testFabric', 'testForgeNeoForge'
+    description = 'Runs the shared storage test suite in all live target environments.'
+    dependsOn fabric1201Target.tasks.named('test')
+    dependsOn fabric1202To1214Target.tasks.named('test')
+    dependsOn forge1201Target.tasks.named('test')
 }
 
 tasks.register('cleanAll') {
     group = 'linearreader'
-    description = 'Cleans both loader targets.'
-    dependsOn 'cleanFabric', 'cleanForgeNeoForge'
+    description = 'Cleans all live targets.'
+    dependsOn fabric1201Target.tasks.named('clean')
+    dependsOn fabric1202To1214Target.tasks.named('clean')
+    dependsOn forge1201Target.tasks.named('clean')
+}
+
+tasks.register('compileJava') {
+    group = 'build'
+    description = 'Compiles all target Java sources.'
+    dependsOn tasks.named('compileAll')
+}
+
+tasks.register('test') {
+    group = 'verification'
+    description = 'Runs all target tests.'
+    dependsOn tasks.named('testAll')
+}
+
+tasks.named('build').configure {
+    dependsOn tasks.named('buildAll')
+}
+
+tasks.named('clean').configure {
+    dependsOn tasks.named('cleanAll')
 }
 
 tasks.named('check').configure {
-    dependsOn 'testFabric', 'testForgeNeoForge'
+    dependsOn tasks.named('testAll')
 }
 
 tasks.register('collectJars', Copy) {
     group = 'linearreader'
     description = 'Collects built mod jars from all loader targets into root/build/collected-jars.'
-    dependsOn 'buildAll'
+    dependsOn tasks.named('buildAll')
     into layout.buildDirectory.dir('collected-jars')
 
-    from('fabric/build/libs') {
+    from(fabric1201Target.layout.buildDirectory.dir('libs')) {
         include '*.jar'
         exclude '*-sources.jar', '*-javadoc.jar'
-        into 'fabric'
+        into 'fabric_1_20_to_1_20_1'
     }
 
-    from('forge-neoforge/build/libs') {
+    from(fabric1202To1214Target.layout.buildDirectory.dir('libs')) {
         include '*.jar'
         exclude '*-sources.jar', '*-javadoc.jar'
-        into 'forge-neoforge'
+        into 'fabric_1_20_2_to_1_21_4'
+    }
+
+    from(forge1201Target.layout.buildDirectory.dir('libs')) {
+        include '*.jar'
+        exclude '*-sources.jar', '*-javadoc.jar'
+        into 'forge_1_20_to_1_20_1'
     }
 }

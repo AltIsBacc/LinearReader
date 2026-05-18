@@ -1,4 +1,31 @@
+pluginManagement {
+    repositories {
+        maven {
+            name = "Fabric"
+            url = "https://maven.fabricmc.net/"
+        }
+        maven {
+            name = "MinecraftForge"
+            url = "https://maven.minecraftforge.net/"
+        }
+        maven {
+            url = "https://maven.parchmentmc.org"
+        }
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
 rootProject.name = "LinearReader-workspace"
 
-includeBuild("fabric")
-includeBuild("forge-neoforge")
+include(":targets")
+project(":targets").projectDir = file("modules/targets")
+
+include(":targets:fabric_1_20_to_1_20_1")
+project(":targets:fabric_1_20_to_1_20_1").projectDir = file("modules/targets/fabric_1_20_to_1_20_1")
+
+include(":targets:fabric_1_20_2_to_1_21_4")
+project(":targets:fabric_1_20_2_to_1_21_4").projectDir = file("modules/targets/fabric_1_20_2_to_1_21_4")
+
+include(":targets:forge_1_20_to_1_20_1")
+project(":targets:forge_1_20_to_1_20_1").projectDir = file("modules/targets/forge_1_20_to_1_20_1")

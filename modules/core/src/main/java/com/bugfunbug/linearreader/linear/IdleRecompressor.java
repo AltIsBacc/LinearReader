@@ -1,0 +1,523 @@
+package com.bugfunbug.linearreader.linear;
+
+import com.bugfunbug.linearreader.LinearRuntime;
+import com.bugfunbug.linearreader.StoragePolicyManager;
+import com.bugfunbug.linearreader.config.LinearConfig;
+
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.file.*;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.*;
+import java.util.stream.Stream;
+import java.util.zip.CRC32;
+
+/**
+ * Recompresses .linear files at a higher Zstd level when the server has been
+ * idle (no chunk I/O) for a configurable period, or on manual command.
+ *
+ * Two modes:
+ *  AUTO   - daemon thread detects idleness; stops immediately if IO resumes.
+ *  MANUAL - /linearreader afk-compress start; runs until all files done or stopped.
+ *
+ * Each recompression is an atomic .recompress.wip -> rename, identical safety
+ * guarantees as normal region writes. Leftover .recompress.wip files are
+ * cleaned up by LinearRuntime.onServerStarting() — they are never promoted
+ * because they use a distinct extension, unlike live .linear.wip files.
+ *
+ * Only unstable open files are skipped — regions that are dirty or currently
+ * flushing may change on disk at any moment. Clean cached regions remain
+ * eligible for recompression. The recompressor re-checks region stability
+ * immediately before writing to close the window between scan and write.
+ */
+public final class IdleRecompressor {
+
+    private IdleRecompressor() {}
+
+    private static final long LINEAR_SIGNATURE = 0xc3ff13183cca9d9aL;
+    private static final ThreadLocal<CRC32> TL_CRC32 = ThreadLocal.withInitial(CRC32::new);
+
+    /** Zstd level used during idle/AFK recompression. */
+    public static final int  TARGET_LEVEL      = 22;
+    private static final long CHECK_INTERVAL_MS = 60L * 1_000L;  // poll every minute
+    private static final long IO_NOTIFY_INTERVAL_MS = 250L;
+    /** Pause between files - keeps disk load low during recompression. */
+    private static final long FILE_DELAY_MS     = 3_000L;
+    /** Pause when JVM heap headroom falls below the configured safety threshold. */
+    private static final long LOW_RAM_BACKOFF_MS = 3L * 60L * 1_000L;
+    private static final long DECISION_LOG_MIN_INTERVAL_MS = 5L * 60L * 1_000L;
+
+    // Region folders registered as each RegionFileStorage opens.
+    private static final Set<Path> KNOWN_FOLDERS = ConcurrentHashMap.newKeySet();
+
+    // Idle detection.
+    private static final AtomicLong    LAST_IO_MS = new AtomicLong(System.currentTimeMillis());
+    private static final AtomicBoolean RUNNING    = new AtomicBoolean(false);
+    private static final AtomicBoolean IS_MANUAL  = new AtomicBoolean(false);
+    private static volatile Thread     DETECTOR   = null;
+    private static volatile Thread     WORKER     = null;
+
+    // Stats - reset at the start of each new run.
+    private static final AtomicInteger FILES_SCANNED      = new AtomicInteger(0);
+    private static final AtomicInteger FILES_RECOMPRESSED = new AtomicInteger(0);
+    private static final AtomicInteger FILES_ALREADY_OPTIMAL = new AtomicInteger(0);
+    private static final AtomicInteger FILES_UNSTABLE_SKIPPED = new AtomicInteger(0);
+    private static final AtomicInteger FILES_NO_SIZE_GAIN = new AtomicInteger(0);
+    private static final AtomicInteger FILES_FAILED = new AtomicInteger(0);
+    private static final AtomicInteger LOW_RAM_PAUSES = new AtomicInteger(0);
+    private static final AtomicLong    BYTES_SAVED        = new AtomicLong(0);
+    private static final AtomicLong    LAST_DECISION_LOG_MS = new AtomicLong(0L);
+    private static volatile long       lastDecisionAtMs = 0L;
+    private static volatile String     lastDecisionSummary = "none";
+    private static volatile String     lastDecisionDetail = "none";
+
+    private enum RecompressOutcome {
+        UPGRADED,
+        ALREADY_OPTIMAL,
+        UNSTABLE_SKIPPED,
+        NO_SIZE_GAIN
+    }
+
+    private record RecompressResult(RecompressOutcome outcome, long bytesSaved) {}
+
+    // -------------------------------------------------------------------------
+    // Called from RegionFileStorageMixin
+    // -------------------------------------------------------------------------
+
+    public static void registerFolder(Path folder) {
+        if (folder == null) return;
+        KNOWN_FOLDERS.add(folder.toAbsolutePath().normalize());
+    }
+
+    /**
+     * Must be called on every chunk read and write.
+     * Resets the idle timer; stops the auto-mode worker if it is running
+     * (manual mode is unaffected — it runs until explicitly stopped).
+     */
+    public static void notifyIO() {
+        long nowMs = System.currentTimeMillis();
+        if (RUNNING.get() && !IS_MANUAL.get()) {
+            LAST_IO_MS.set(nowMs);
+            interruptWorker();
+            return;
+        }
+        long lastIoMs = LAST_IO_MS.get();
+        if (nowMs - lastIoMs >= IO_NOTIFY_INTERVAL_MS) {
+            LAST_IO_MS.lazySet(nowMs);
+            StoragePolicyManager.noteChunkIo();
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Lifecycle
+    // -------------------------------------------------------------------------
+
+    /** Starts the daemon thread that watches for idleness. Call once at mod init. */
+    public static void startAutoDetector() {
+        LAST_IO_MS.set(System.currentTimeMillis());
+        Thread existing = DETECTOR;
+        if (existing != null && existing.isAlive()) return;
+
+        Thread t = new Thread(() -> {
+            while (!Thread.currentThread().isInterrupted()) {
+                try {
+                    Thread.sleep(CHECK_INTERVAL_MS);
+                } catch (InterruptedException e) {
+                    break;
+                }
+                if (!LinearConfig.isAutoRecompressEnabled()) continue;
+                if (RUNNING.get()) continue;
+                long idleMs = System.currentTimeMillis() - LAST_IO_MS.get();
+                if (idleMs >= idleThresholdMs() && StoragePolicyManager.maintenanceBudgetFiles() > 0) {
+                    LinearRuntime.LOGGER.info(
+                            "[LinearReader] Server idle for {} min - starting background recompression.",
+                            idleMs / 60_000L);
+                    startWorker(false);
+                }
+            }
+            DETECTOR = null;
+        }, "lr-idle-detector");
+        t.setDaemon(true);
+        t.setPriority(Thread.MIN_PRIORITY + 1);
+        DETECTOR = t;
+        t.start();
+    }
+
+    /** Returns false if already running. */
+    public static boolean startManual() {
+        if (RUNNING.get()) return false;
+        startWorker(true);
+        return true;
+    }
+
+    public static void stopManual() {
+        IS_MANUAL.set(false);
+        interruptWorker();
+    }
+
+    public static void shutdown() {
+        Thread detector = DETECTOR;
+        if (detector != null) detector.interrupt();
+        interruptWorker();
+    }
+
+    public static boolean isRunning()         { return RUNNING.get(); }
+    public static boolean isManual()          { return IS_MANUAL.get(); }
+    public static boolean isAutoEnabled()     { return LinearConfig.isAutoRecompressEnabled(); }
+    public static int     filesScanned()      { return FILES_SCANNED.get(); }
+    public static int     filesRecompressed() { return FILES_RECOMPRESSED.get(); }
+    public static int     filesAlreadyOptimal() { return FILES_ALREADY_OPTIMAL.get(); }
+    public static int     filesUnstableSkipped() { return FILES_UNSTABLE_SKIPPED.get(); }
+    public static int     lowRamPauses()      { return LOW_RAM_PAUSES.get(); }
+    public static long    idleThresholdMs()   { return LinearConfig.getIdleThresholdMinutes() * 60_000L; }
+    public static long    idleRemainingMs() {
+        if (!LinearConfig.isAutoRecompressEnabled()) return 0L;
+        long remaining = idleThresholdMs() - (System.currentTimeMillis() - LAST_IO_MS.get());
+        return Math.max(0L, remaining);
+    }
+    public static long    bytesSaved()        { return BYTES_SAVED.get(); }
+    public static long    lastDecisionAtMs()  { return lastDecisionAtMs; }
+    public static String  lastDecisionSummary() { return lastDecisionSummary; }
+    public static String  lastDecisionDetail() { return lastDecisionDetail; }
+
+    // -------------------------------------------------------------------------
+    // Worker
+    // -------------------------------------------------------------------------
+
+    private static void startWorker(boolean manual) {
+        if (!RUNNING.compareAndSet(false, true)) return;
+        resetStats();
+        IS_MANUAL.set(manual);
+        Thread t = new Thread(() -> {
+            try {
+                doRecompression();
+            } finally {
+                RUNNING.set(false);
+                IS_MANUAL.set(false);
+                WORKER = null;
+                logCompletion();
+            }
+        }, "lr-recompressor");
+        t.setDaemon(true);
+        t.setPriority(Thread.MIN_PRIORITY + 1);
+        WORKER = t;
+        t.start();
+    }
+
+    private static void resetStats() {
+        FILES_SCANNED.set(0);
+        FILES_RECOMPRESSED.set(0);
+        FILES_ALREADY_OPTIMAL.set(0);
+        FILES_UNSTABLE_SKIPPED.set(0);
+        FILES_NO_SIZE_GAIN.set(0);
+        FILES_FAILED.set(0);
+        LOW_RAM_PAUSES.set(0);
+        BYTES_SAVED.set(0);
+        LAST_DECISION_LOG_MS.set(0L);
+        lastDecisionAtMs = 0L;
+        lastDecisionSummary = "none";
+        lastDecisionDetail = "none";
+    }
+
+    private static void logCompletion() {
+        int total = FILES_SCANNED.get();
+        if (total == 0) {
+            LinearRuntime.LOGGER.info("[LinearReader] Recompression done: no .linear files found.");
+            return;
+        }
+
+        StringBuilder msg = new StringBuilder("[LinearReader] Recompression done: ")
+                .append(FILES_RECOMPRESSED.get()).append(" upgraded, ")
+                .append(FILES_ALREADY_OPTIMAL.get()).append(" already at level ")
+                .append(TARGET_LEVEL).append(", ")
+                .append(FILES_UNSTABLE_SKIPPED.get()).append(" skipped (dirty/flushing)");
+
+        int noGain = FILES_NO_SIZE_GAIN.get();
+        if (noGain > 0) {
+            msg.append(", ").append(noGain).append(" no size gain");
+        }
+
+        int failed = FILES_FAILED.get();
+        if (failed > 0) {
+            msg.append(", ").append(failed).append(" failed");
+        }
+
+        int lowRamPauses = LOW_RAM_PAUSES.get();
+        if (lowRamPauses > 0) {
+            msg.append(", ").append(lowRamPauses).append(" low-RAM pauses");
+        }
+
+        msg.append(", ").append(BYTES_SAVED.get()).append(" bytes saved.");
+        LinearRuntime.LOGGER.info(msg.toString());
+    }
+
+    private static void interruptWorker() {
+        Thread w = WORKER;
+        if (w != null) w.interrupt();
+    }
+
+    private static void doRecompression() {
+        int budgetRemaining = IS_MANUAL.get() ? Integer.MAX_VALUE : StoragePolicyManager.maintenanceBudgetFiles();
+        if (!IS_MANUAL.get() && budgetRemaining <= 0) {
+            noteDecision("maintenance deferred",
+                    "budget=0 profile=" + StoragePolicyManager.debugSnapshot().loadProfile(), true);
+            return;
+        }
+        for (Path folder : KNOWN_FOLDERS) {
+            if (Thread.currentThread().isInterrupted()) return;
+            if (!Files.isDirectory(folder)) continue;
+
+            Path[] files;
+            try (Stream<Path> s = Files.list(folder)) {
+                files = s.filter(Files::isRegularFile)
+                        .filter(p -> p.getFileName().toString().endsWith(".linear"))
+                        .toArray(Path[]::new);
+            } catch (IOException e) {
+                LinearRuntime.LOGGER.warn("[LinearReader] Cannot list {}: {}",
+                        folder.getFileName(), e.getMessage());
+                continue;
+            }
+            Arrays.sort(files, Comparator.comparingDouble((Path p) -> StoragePolicyManager.recompressPriority(p))
+                    .reversed());
+
+            for (Path p : files) {
+                if (Thread.currentThread().isInterrupted()) return;
+                if (!IS_MANUAL.get() && StoragePolicyManager.maintenanceBudgetFiles() <= 0) {
+                    noteDecision("maintenance budget exhausted",
+                            "folder=" + folder.getFileName(), true);
+                    return;
+                }
+                if (!IS_MANUAL.get() && StoragePolicyManager.recompressPriority(p) <= 0.0D) {
+                    noteDecision("no cold recompress candidates",
+                            "folder=" + folder.getFileName(), false);
+                    break;
+                }
+                if (!IS_MANUAL.get() && budgetRemaining <= 0) {
+                    noteDecision("maintenance budget exhausted",
+                            "folder=" + folder.getFileName(), true);
+                    return;
+                }
+                FILES_SCANNED.incrementAndGet();
+                try {
+                    RecompressResult result = recompressFile(p);
+                    switch (result.outcome()) {
+                        case UPGRADED -> {
+                            BYTES_SAVED.addAndGet(result.bytesSaved());
+                            FILES_RECOMPRESSED.incrementAndGet();
+                            StoragePolicyManager.recordRegionRecompressed(p, TARGET_LEVEL, result.bytesSaved());
+                        }
+                        case ALREADY_OPTIMAL -> {
+                            FILES_ALREADY_OPTIMAL.incrementAndGet();
+                            StoragePolicyManager.recordRegionRecompressed(p, TARGET_LEVEL, 0L);
+                        }
+                        case UNSTABLE_SKIPPED -> {
+                            FILES_UNSTABLE_SKIPPED.incrementAndGet();
+                            noteDecision("hot region skipped", "file=" + p.getFileName(), false);
+                        }
+                        case NO_SIZE_GAIN -> FILES_NO_SIZE_GAIN.incrementAndGet();
+                    }
+                    if (result.outcome() == RecompressOutcome.UPGRADED) {
+                        LinearRuntime.LOGGER.debug(
+                                "[LinearReader] Recompressed {} - saved {} bytes.",
+                                p.getFileName(), result.bytesSaved());
+                    }
+                    if (result.outcome() != RecompressOutcome.UNSTABLE_SKIPPED) {
+                        if (!IS_MANUAL.get()) {
+                            budgetRemaining--;
+                        }
+                        Thread.sleep(FILE_DELAY_MS);
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                } catch (IOException e) {
+                    FILES_FAILED.incrementAndGet();
+                    LinearRuntime.LOGGER.warn("[LinearReader] Recompression failed for {}: {}",
+                            p.getFileName(), e.getMessage());
+                }
+            }
+        }
+    }
+
+    private static boolean isRegionUnstable(Path path) {
+        Path abs = path.toAbsolutePath().normalize();
+        for (LinearRegionFile r : LinearRegionFile.ALL_OPEN) {
+            if (r.getNormalizedPath().equals(abs)) {
+                return r.isDirty() || r.isFlushing();
+            }
+        }
+        return false;
+    }
+
+    private static int availableHeapPercent() {
+        Runtime runtime = Runtime.getRuntime();
+        long maxMemory = runtime.maxMemory();
+        if (maxMemory <= 0L) return 100;
+
+        long usedMemory = runtime.totalMemory() - runtime.freeMemory();
+        long availableMemory = Math.max(0L, maxMemory - usedMemory);
+        return (int) Math.max(0L, Math.min(100L, (availableMemory * 100L) / maxMemory));
+    }
+
+    private static void awaitHeapHeadroom(Path path) throws InterruptedException {
+        int thresholdPercent = LinearConfig.getRecompressMinFreeRamPercent();
+        while (availableHeapPercent() < thresholdPercent) {
+            LOW_RAM_PAUSES.incrementAndGet();
+            noteDecision("low RAM pause",
+                    "file=" + path.getFileName() + " free=" + availableHeapPercent() + "%", true);
+            LinearRuntime.LOGGER.info(
+                    "[LinearReader] Pausing recompression for {} because JVM heap headroom is {}% (< {}%).",
+                    path.getFileName(), availableHeapPercent(), thresholdPercent);
+            Thread.sleep(LOW_RAM_BACKOFF_MS);
+        }
+    }
+
+    private static void noteDecision(String summary, String detail, boolean infoLevel) {
+        long nowMs = System.currentTimeMillis();
+        lastDecisionAtMs = nowMs;
+        lastDecisionSummary = summary;
+        lastDecisionDetail = detail;
+        long lastLogMs = LAST_DECISION_LOG_MS.get();
+        if (nowMs - lastLogMs < DECISION_LOG_MIN_INTERVAL_MS) {
+            return;
+        }
+        if (!LAST_DECISION_LOG_MS.compareAndSet(lastLogMs, nowMs)) {
+            return;
+        }
+        String message = "[LinearReader] Recompression: " + summary + " (" + detail + ")";
+        if (infoLevel) {
+            LinearRuntime.LOGGER.info(message);
+        } else {
+            LinearRuntime.LOGGER.debug(message);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // File-level recompression — package-private so backup logic can use it
+    // -------------------------------------------------------------------------
+
+    /**
+     * Recompresses {@code path} in-place at {@link #TARGET_LEVEL}.
+     * Returns bytes saved, or 0 if the file was already at/above target level
+     * or if recompression would make it larger.
+     */
+    static RecompressResult recompressFile(Path path) throws IOException, InterruptedException {
+        if (isRegionUnstable(path)) {
+            return new RecompressResult(RecompressOutcome.UNSTABLE_SKIPPED, 0L);
+        }
+
+        // Read only the outer header (32 bytes) to check compression level.
+        // Avoids reading the entire file for the common case of already-maxed files.
+        byte[] header = new byte[32];
+        try (java.io.InputStream in = Files.newInputStream(path)) {
+            if (in.read(header) < 32) {
+                return new RecompressResult(RecompressOutcome.NO_SIZE_GAIN, 0L);
+            }
+        }
+        ByteBuffer hdr = ByteBuffer.wrap(header);
+        if (hdr.getLong(0) != LINEAR_SIGNATURE) {
+            return new RecompressResult(RecompressOutcome.NO_SIZE_GAIN, 0L);
+        }
+        if ((header[17] & 0xFF) >= TARGET_LEVEL) {
+            return new RecompressResult(RecompressOutcome.ALREADY_OPTIMAL, 0L);
+        }
+
+        awaitHeapHeadroom(path);
+
+        // Full recompression needed — now read the whole file.
+        return recompressFileTo(path, path, TARGET_LEVEL);
+    }
+
+    /**
+     * Reads {@code src}, recompresses at {@code targetLevel}, writes atomically to {@code dst}.
+     * {@code src} and {@code dst} may be the same path (in-place).
+     * Returns the outcome and bytes saved.
+     */
+    static RecompressResult recompressFileTo(Path src, Path dst, int targetLevel) throws IOException {
+        LinearRegionFile.EncodedLinearFile encoded = LinearRegionFile.readEncodedLinearFile(src);
+        if (encoded.headerSignature != LINEAR_SIGNATURE) {
+            return new RecompressResult(RecompressOutcome.NO_SIZE_GAIN, 0L);
+        }
+        if (encoded.footerSignature != LINEAR_SIGNATURE) {
+            return new RecompressResult(RecompressOutcome.NO_SIZE_GAIN, 0L);
+        }
+
+        byte  version    = encoded.version;
+        long  newestTs   = encoded.newestTimestamp;
+        byte  curLevel   = encoded.compressionLevel;
+        short chunkCount = encoded.chunkCount;
+
+        // For in-place recompression, skip if already at or above target.
+        if (src.equals(dst) && (curLevel & 0xFF) >= targetLevel) {
+            return new RecompressResult(RecompressOutcome.ALREADY_OPTIMAL, 0L);
+        }
+
+        int compBodyLen = encoded.compressedBody.length;
+        if (compBodyLen <= 0) return new RecompressResult(RecompressOutcome.NO_SIZE_GAIN, 0L);
+
+        // Decompress.
+        long expectedDecomp = ZstdSupport.decompressedSize(encoded.compressedBody, 0, compBodyLen);
+        if (expectedDecomp <= 0 || expectedDecomp > Integer.MAX_VALUE) {
+            return new RecompressResult(RecompressOutcome.NO_SIZE_GAIN, 0L);
+        }
+
+        byte[] body = new byte[(int) expectedDecomp];
+        long result = ZstdSupport.decompress(body, 0, body.length, encoded.compressedBody, 0, compBodyLen);
+        if (ZstdSupport.isError(result)) return new RecompressResult(RecompressOutcome.NO_SIZE_GAIN, 0L);
+
+        // Recompress at target level.
+        int maxCompLen = (int) ZstdSupport.compressBound(body.length);
+        byte[] out = new byte[32 + maxCompLen + 8];
+        long   newLen  = ZstdSupport.compress(out, 32, maxCompLen, body, 0, body.length, targetLevel);
+        if (ZstdSupport.isError(newLen)) return new RecompressResult(RecompressOutcome.NO_SIZE_GAIN, 0L);
+
+        // For in-place: don't write if it got larger (can happen with already-optimal data).
+        if (src.equals(dst) && newLen >= compBodyLen) {
+            return new RecompressResult(RecompressOutcome.NO_SIZE_GAIN, 0L);
+        }
+
+        CRC32 crc32 = TL_CRC32.get();
+        crc32.reset();
+        crc32.update(out, 32, (int) newLen);
+
+        ByteBuffer outBuf = ByteBuffer.wrap(out);
+        outBuf.putLong(LINEAR_SIGNATURE);
+        outBuf.put(version);
+        outBuf.putLong(newestTs);
+        outBuf.put((byte) targetLevel);
+        outBuf.putShort(chunkCount);
+        outBuf.putInt((int) newLen);
+        outBuf.putLong(crc32.getValue());
+        outBuf.position(32 + (int) newLen);
+        outBuf.putLong(LINEAR_SIGNATURE);
+
+        // Only abort in-place recompression if the region is currently unstable.
+        // Backup creation (src != dst) is always safe to proceed.
+        if (src.toAbsolutePath().normalize().equals(dst.toAbsolutePath().normalize()) && isRegionUnstable(src)) {
+            return new RecompressResult(RecompressOutcome.UNSTABLE_SKIPPED, 0L);
+        }
+
+        Path dstParent = dst.getParent();
+        if (dstParent != null) {
+            Files.createDirectories(dstParent);
+        }
+
+        // Atomic rename. Use .recompress.wip so startup recovery ignores/deletes it
+        // rather than treating it as a live .linear.wip to promote.
+        Path wip = dst.resolveSibling(dst.getFileName() + ".recompress.wip");
+        try (java.io.OutputStream os = Files.newOutputStream(wip)) {
+            os.write(out, 0, 32 + (int) newLen + 8);
+        }
+        try {
+            Files.move(wip, dst,
+                    StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException e) {
+            Files.move(wip, dst, StandardCopyOption.REPLACE_EXISTING);
+        }
+
+        return new RecompressResult(RecompressOutcome.UPGRADED, compBodyLen - (long) newLen);
+    }
+}
