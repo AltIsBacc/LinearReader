@@ -1,0 +1,22 @@
+package com.bugfunbug.linearreader.mc1202to1214;
+
+import com.bugfunbug.linearreader.minecraftapi.MinecraftFamily;
+import com.bugfunbug.linearreader.minecraftapi.RegionStorageHooks;
+import com.bugfunbug.linearreader.minecraftapi.WorldPathResolver;
+
+public final class Minecraft1202To1214Family implements MinecraftFamily {
+
+    public static final Minecraft1202To1214Family INSTANCE = new Minecraft1202To1214Family();
+
+    private Minecraft1202To1214Family() {}
+
+    @Override
+    public WorldPathResolver worldPathResolver() {
+        return Minecraft1202To1214WorldPathResolver.INSTANCE;
+    }
+
+    @Override
+    public RegionStorageHooks regionStorageHooks() {
+        return Minecraft1202To1214RegionStorageHooks.INSTANCE;
+    }
+}
