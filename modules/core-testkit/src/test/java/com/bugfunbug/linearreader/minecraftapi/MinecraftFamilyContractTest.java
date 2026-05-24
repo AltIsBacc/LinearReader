@@ -15,7 +15,8 @@ class MinecraftFamilyContractTest {
 
     private static final List<String> FAMILY_CLASS_NAMES = List.of(
             "com.bugfunbug.linearreader.mc1201.Minecraft1201Family",
-            "com.bugfunbug.linearreader.mc1202to1214.Minecraft1202To1214Family"
+            "com.bugfunbug.linearreader.mc1202to1214.Minecraft1202To1214Family",
+            "com.bugfunbug.linearreader.mc1215to12110.Minecraft1215To12110Family"
     );
 
     @Test

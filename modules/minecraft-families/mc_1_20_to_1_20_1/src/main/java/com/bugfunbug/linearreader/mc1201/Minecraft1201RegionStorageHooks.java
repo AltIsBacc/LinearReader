@@ -4,7 +4,9 @@ import com.bugfunbug.linearreader.linear.IdleRecompressor;
 import com.bugfunbug.linearreader.linear.MCAConverter;
 import com.bugfunbug.linearreader.minecraftapi.RegionStorageHooks;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.chunk.storage.RegionFile;
 
+import java.io.IOException;
 import java.nio.file.Path;
 
 public final class Minecraft1201RegionStorageHooks implements RegionStorageHooks {
@@ -24,5 +26,10 @@ public final class Minecraft1201RegionStorageHooks implements RegionStorageHooks
     public Path resolveLinearRegionPath(Path regionFolder, ChunkPos chunkPos) {
         return regionFolder.resolve(
                 "r." + chunkPos.getRegionX() + "." + chunkPos.getRegionZ() + ".linear");
+    }
+
+    @Override
+    public RegionFile openVanillaRegionFile(Path regionFilePath, Path regionFolder, boolean sync) throws IOException {
+        return new RegionFile(regionFilePath, regionFolder, sync);
     }
 }

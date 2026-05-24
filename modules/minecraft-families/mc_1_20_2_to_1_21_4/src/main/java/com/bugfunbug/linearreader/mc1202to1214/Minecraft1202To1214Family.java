@@ -1,5 +1,6 @@
 package com.bugfunbug.linearreader.mc1202to1214;
 
+import com.bugfunbug.linearreader.minecraftapi.ChunkNbtAdapter;
 import com.bugfunbug.linearreader.minecraftapi.MinecraftFamily;
 import com.bugfunbug.linearreader.minecraftapi.RegionStorageHooks;
 import com.bugfunbug.linearreader.minecraftapi.WorldPathResolver;
@@ -18,5 +19,10 @@ public final class Minecraft1202To1214Family implements MinecraftFamily {
     @Override
     public RegionStorageHooks regionStorageHooks() {
         return Minecraft1202To1214RegionStorageHooks.INSTANCE;
+    }
+
+    @Override
+    public ChunkNbtAdapter chunkNbtAdapter() {
+        return Minecraft1202To1214ChunkNbtAdapter.INSTANCE;
     }
 }

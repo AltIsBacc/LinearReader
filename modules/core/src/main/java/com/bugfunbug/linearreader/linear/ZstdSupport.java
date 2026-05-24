@@ -12,13 +12,20 @@ import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.Locale;
 
-final class ZstdSupport {
+public final class ZstdSupport {
 
     private static final String EMBEDDED_JAR_RESOURCE = "/META-INF/linearreader-libs/zstd-jni.jar";
     private static volatile Bridge bridge;
+    private static volatile ZstdUnavailableException unavailableException;
+    private static volatile Throwable testFailure;
 
     private ZstdSupport() {
+    }
+
+    public static void ensureAvailable() {
+        bridge();
     }
 
     static long compressBound(long srcSize) {
@@ -58,18 +65,113 @@ final class ZstdSupport {
     }
 
     private static Bridge bridge() {
+        Throwable injectedFailure = testFailure;
+        if (injectedFailure != null) {
+            throw unavailable(injectedFailure);
+        }
+
         Bridge current = bridge;
         if (current != null) {
             return current;
         }
+
+        ZstdUnavailableException cachedFailure = unavailableException;
+        if (cachedFailure != null) {
+            throw cachedFailure;
+        }
+
         synchronized (ZstdSupport.class) {
+            injectedFailure = testFailure;
+            if (injectedFailure != null) {
+                throw unavailable(injectedFailure);
+            }
+
             current = bridge;
             if (current == null) {
-                current = loadBridge();
-                bridge = current;
+                ZstdUnavailableException priorFailure = unavailableException;
+                if (priorFailure != null) {
+                    throw priorFailure;
+                }
+                try {
+                    current = loadBridge();
+                    bridge = current;
+                } catch (Throwable t) {
+                    throw unavailable(t);
+                }
             }
             return current;
         }
+    }
+
+    static void setTestFailure(Throwable failure) {
+        testFailure = failure;
+    }
+
+    static void clearTestFailure() {
+        testFailure = null;
+        unavailableException = null;
+    }
+
+    private static ZstdUnavailableException unavailable(Throwable cause) {
+        if (cause instanceof ZstdUnavailableException unavailable) {
+            unavailableException = unavailable;
+            return unavailable;
+        }
+
+        ZstdUnavailableException cached = unavailableException;
+        if (cached != null && sameFailure(cached.getCause(), cause)) {
+            return cached;
+        }
+
+        StringBuilder message = new StringBuilder(
+                "[LinearReader] Fatal startup incompatibility: zstd-jni could not be initialized. "
+                        + "LinearReader cannot safely load worlds because .linear region data would not be writable."
+        );
+        if (looksLikeAndroidFcl(cause)) {
+            message.append(" Android/FCL runtime detected; the embedded zstd-jni library is not supported there.");
+        }
+
+        ZstdUnavailableException failure = new ZstdUnavailableException(message.toString(), cause);
+        unavailableException = failure;
+        return failure;
+    }
+
+    private static boolean sameFailure(Throwable left, Throwable right) {
+        return left == right || (left != null && right != null
+                && left.getClass() == right.getClass()
+                && String.valueOf(left.getMessage()).equals(String.valueOf(right.getMessage())));
+    }
+
+    private static boolean looksLikeAndroidFcl(Throwable cause) {
+        StringBuilder haystack = new StringBuilder();
+        appendEnvHint(haystack, System.getProperty("java.vendor"));
+        appendEnvHint(haystack, System.getProperty("java.vm.vendor"));
+        appendEnvHint(haystack, System.getProperty("java.runtime.name"));
+        appendEnvHint(haystack, System.getProperty("java.library.path"));
+        appendEnvHint(haystack, System.getProperty("java.class.path"));
+
+        Throwable current = cause;
+        while (current != null) {
+            appendEnvHint(haystack, current.getClass().getName());
+            appendEnvHint(haystack, current.getMessage());
+            current = current.getCause();
+        }
+
+        String normalized = haystack.toString().toLowerCase(Locale.ROOT);
+        return normalized.contains("android")
+                || normalized.contains("com.tungsten.fcl")
+                || normalized.contains("fclauncher")
+                || normalized.contains("pojav");
+    }
+
+    private static void appendEnvHint(StringBuilder haystack, String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        if (!haystack.isEmpty()) {
+            haystack.append(' ');
+        }
+        haystack.append(value);
     }
 
     private static Bridge loadBridge() {
@@ -116,6 +218,13 @@ final class ZstdSupport {
             tempDir.toFile().deleteOnExit();
             jarPath.toFile().deleteOnExit();
             return jarPath;
+        }
+    }
+
+    public static final class ZstdUnavailableException extends IllegalStateException {
+
+        private ZstdUnavailableException(String message, Throwable cause) {
+            super(message, cause);
         }
     }
 

@@ -1,7 +1,9 @@
 package com.bugfunbug.linearreader.minecraftapi;
 
+import net.minecraft.world.level.chunk.storage.RegionFile;
 import net.minecraft.world.level.ChunkPos;
 
+import java.io.IOException;
 import java.nio.file.Path;
 
 /**
@@ -15,4 +17,6 @@ public interface RegionStorageHooks {
     void onStorageOpened(Path regionFolder);
 
     Path resolveLinearRegionPath(Path regionFolder, ChunkPos chunkPos);
+
+    RegionFile openVanillaRegionFile(Path regionFilePath, Path regionFolder, boolean sync) throws IOException;
 }

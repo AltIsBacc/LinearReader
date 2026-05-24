@@ -148,7 +148,7 @@ public final class MCAConverter {
         byte[][] chunkData  = new byte[1024][];
         int      chunkCount = 0;
 
-        try (RegionFile rf = new RegionFile(mcaPath, dir, false)) {
+        try (RegionFile rf = LinearRuntime.openVanillaRegionFile(mcaPath, dir, false)) {
             for (int i = 0; i < 1024; i++) {
                 int lx = i % 32;
                 int lz = i / 32;

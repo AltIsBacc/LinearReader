@@ -4,6 +4,7 @@ plugins {
 
 def fabric1201Target = project(':targets:fabric_1_20_to_1_20_1')
 def fabric1202To1214Target = project(':targets:fabric_1_20_2_to_1_21_4')
+def fabric1215To12110Target = project(':targets:fabric_1_21_5_to_1_21_10')
 def forge1201Target = project(':targets:forge_1_20_to_1_20_1')
 
 tasks.register('compileAll') {
@@ -11,6 +12,7 @@ tasks.register('compileAll') {
     description = 'Compiles all live targets.'
     dependsOn fabric1201Target.tasks.named('compileJava')
     dependsOn fabric1202To1214Target.tasks.named('compileJava')
+    dependsOn fabric1215To12110Target.tasks.named('compileJava')
     dependsOn forge1201Target.tasks.named('compileJava')
 }
 
@@ -19,6 +21,7 @@ tasks.register('compileFabric') {
     description = 'Compiles all live Fabric targets.'
     dependsOn fabric1201Target.tasks.named('compileJava')
     dependsOn fabric1202To1214Target.tasks.named('compileJava')
+    dependsOn fabric1215To12110Target.tasks.named('compileJava')
 }
 
 tasks.register('compileForgeNeoForge') {
@@ -38,6 +41,7 @@ tasks.register('buildFabric') {
     description = 'Builds all live Fabric targets.'
     dependsOn fabric1201Target.tasks.named('build')
     dependsOn fabric1202To1214Target.tasks.named('build')
+    dependsOn fabric1215To12110Target.tasks.named('build')
 }
 
 tasks.register('buildForgeNeoForge') {
@@ -57,6 +61,7 @@ tasks.register('cleanFabric') {
     description = 'Cleans all live Fabric targets.'
     dependsOn fabric1201Target.tasks.named('clean')
     dependsOn fabric1202To1214Target.tasks.named('clean')
+    dependsOn fabric1215To12110Target.tasks.named('clean')
 }
 
 tasks.register('cleanForgeNeoForge') {
@@ -76,6 +81,7 @@ tasks.register('testFabric') {
     description = 'Runs all live Fabric target tests.'
     dependsOn fabric1201Target.tasks.named('test')
     dependsOn fabric1202To1214Target.tasks.named('test')
+    dependsOn fabric1215To12110Target.tasks.named('test')
 }
 
 tasks.register('testForgeNeoForge') {
@@ -101,6 +107,7 @@ tasks.register('buildAll') {
     description = 'Builds all live targets.'
     dependsOn fabric1201Target.tasks.named('build')
     dependsOn fabric1202To1214Target.tasks.named('build')
+    dependsOn fabric1215To12110Target.tasks.named('build')
     dependsOn forge1201Target.tasks.named('build')
 }
 
@@ -109,6 +116,7 @@ tasks.register('testAll') {
     description = 'Runs the shared storage test suite in all live target environments.'
     dependsOn fabric1201Target.tasks.named('test')
     dependsOn fabric1202To1214Target.tasks.named('test')
+    dependsOn fabric1215To12110Target.tasks.named('test')
     dependsOn forge1201Target.tasks.named('test')
 }
 
@@ -117,6 +125,7 @@ tasks.register('cleanAll') {
     description = 'Cleans all live targets.'
     dependsOn fabric1201Target.tasks.named('clean')
     dependsOn fabric1202To1214Target.tasks.named('clean')
+    dependsOn fabric1215To12110Target.tasks.named('clean')
     dependsOn forge1201Target.tasks.named('clean')
 }
 
@@ -160,6 +169,12 @@ tasks.register('collectJars', Copy) {
         include '*.jar'
         exclude '*-sources.jar', '*-javadoc.jar'
         into 'fabric_1_20_2_to_1_21_4'
+    }
+
+    from(fabric1215To12110Target.layout.buildDirectory.dir('libs')) {
+        include '*.jar'
+        exclude '*-sources.jar', '*-javadoc.jar'
+        into 'fabric_1_21_5_to_1_21_10'
     }
 
     from(forge1201Target.layout.buildDirectory.dir('libs')) {

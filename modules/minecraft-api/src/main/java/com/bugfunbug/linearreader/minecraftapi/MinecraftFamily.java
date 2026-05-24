@@ -9,4 +9,6 @@ public interface MinecraftFamily {
     WorldPathResolver worldPathResolver();
 
     RegionStorageHooks regionStorageHooks();
+
+    ChunkNbtAdapter chunkNbtAdapter();
 }

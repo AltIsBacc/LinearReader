@@ -166,7 +166,7 @@ public final class LinearExporter {
         try {
             // RegionFile(path, externalFileDir, dsync)
             // dsync=false — we're writing an export copy, not a live save.
-            try (RegionFile mca = new RegionFile(mcaDest, mcaFolder, false)) {
+            try (RegionFile mca = LinearRuntime.openVanillaRegionFile(mcaDest, mcaFolder, false)) {
                 for (int i = 0; i < 1024; i++) {
                     int lx = i % 32;
                     int lz = i / 32;

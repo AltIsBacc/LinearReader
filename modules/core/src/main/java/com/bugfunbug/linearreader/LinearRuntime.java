@@ -4,12 +4,15 @@ import com.bugfunbug.linearreader.config.LinearConfig;
 import com.bugfunbug.linearreader.linear.DHPregenMonitor;
 import com.bugfunbug.linearreader.linear.IdleRecompressor;
 import com.bugfunbug.linearreader.linear.LinearRegionFile;
+import com.bugfunbug.linearreader.linear.ZstdSupport;
+import com.bugfunbug.linearreader.minecraftapi.ChunkNbtAdapter;
 import com.bugfunbug.linearreader.minecraftapi.MinecraftFamily;
 import com.bugfunbug.linearreader.minecraftapi.WorldPathResolver;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.chunk.storage.RegionFile;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -82,7 +85,10 @@ public final class LinearRuntime {
     private LinearRuntime() {}
 
     public static LinearRuntime install(MinecraftFamily minecraftFamily) {
-        MINECRAFT_FAMILY = Objects.requireNonNull(minecraftFamily, "minecraftFamily");
+        Objects.requireNonNull(minecraftFamily, "minecraftFamily");
+        ensureEnvironmentCompatibility();
+
+        MINECRAFT_FAMILY = minecraftFamily;
         WORLD_PATH_RESOLVER = minecraftFamily.worldPathResolver();
 
         LinearRuntime runtime = INSTANCE;
@@ -99,6 +105,18 @@ public final class LinearRuntime {
                 LOGGER.info("[LinearReader] Initialized — using .linear format exclusively.");
             }
             return runtime;
+        }
+    }
+
+    private static void ensureEnvironmentCompatibility() {
+        try {
+            ZstdSupport.ensureAvailable();
+        } catch (ZstdSupport.ZstdUnavailableException e) {
+            LOGGER.fatal(
+                    "[LinearReader] Refusing to start: zstd is unavailable, so worlds would be able to load without being safely writable.",
+                    e
+            );
+            throw e;
         }
     }
 
@@ -158,6 +176,15 @@ public final class LinearRuntime {
 
     public static Path resolveLinearRegionPath(Path regionFolder, ChunkPos chunkPos) {
         return minecraftFamily().regionStorageHooks().resolveLinearRegionPath(regionFolder, chunkPos);
+    }
+
+    public static ChunkNbtAdapter chunkNbtAdapter() {
+        return minecraftFamily().chunkNbtAdapter();
+    }
+
+    public static RegionFile openVanillaRegionFile(Path regionFilePath, Path regionFolder, boolean sync)
+            throws IOException {
+        return minecraftFamily().regionStorageHooks().openVanillaRegionFile(regionFilePath, regionFolder, sync);
     }
 
     @FunctionalInterface

@@ -1,5 +1,6 @@
 package com.bugfunbug.linearreader.linear;
 
+import com.bugfunbug.linearreader.LinearRuntime;
 import com.bugfunbug.linearreader.LinearTestSupport;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -49,12 +50,23 @@ class LinearRegionFileCorpusTest {
         LinearRegionFile region = new LinearRegionFile(file, false);
         try {
             CompoundTag entityChunk = readChunk(region, new ChunkPos(1, 0));
-            ListTag entities = entityChunk.getList("entities", Tag.TAG_COMPOUND);
+            ListTag entities = LinearRuntime.chunkNbtAdapter().getListOrEmpty(
+                    entityChunk,
+                    "entities",
+                    Tag.TAG_COMPOUND
+            );
             assertEquals(1, entities.size());
 
             CompoundTag wrappedChunk = readChunk(region, new ChunkPos(2, 0));
-            assertTrue(wrappedChunk.contains("Level", Tag.TAG_COMPOUND));
-            assertEquals(0L, wrappedChunk.getCompound("Level").getLong("InhabitedTime"));
+            assertTrue(LinearRuntime.chunkNbtAdapter().hasCompound(wrappedChunk, "Level"));
+            assertEquals(
+                    0L,
+                    LinearRuntime.chunkNbtAdapter().getLongOrDefault(
+                            LinearRuntime.chunkNbtAdapter().getCompoundOrEmpty(wrappedChunk, "Level"),
+                            "InhabitedTime",
+                            -1L
+                    )
+            );
         } finally {
             LinearRegionFile.ALL_OPEN.remove(region);
             region.releaseChunkData();

@@ -3,10 +3,10 @@ package com.bugfunbug.linearreader.command;
 import com.bugfunbug.linearreader.LinearRuntime;
 import com.bugfunbug.linearreader.config.LinearConfig;
 import com.bugfunbug.linearreader.linear.LinearRegionFile;
+import com.bugfunbug.linearreader.minecraftapi.ChunkNbtAdapter;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.LongArrayTag;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.MinecraftServer;
@@ -467,32 +467,29 @@ public final class ChunkPruner {
     }
 
     static boolean isPrunableChunk(CompoundTag rawTag) {
-        CompoundTag tag = rawTag.contains("Level", Tag.TAG_COMPOUND)
-                ? rawTag.getCompound("Level")
-                : rawTag;
+        ChunkNbtAdapter nbt = LinearRuntime.chunkNbtAdapter();
+        CompoundTag tag = nbt.unwrapChunkTag(rawTag);
 
-        if (!tag.contains("InhabitedTime", Tag.TAG_ANY_NUMERIC)) return false;
-        if (tag.getLong("InhabitedTime") != 0L) return false;
-        if (hasNonEmptyList(tag, "block_entities") || hasNonEmptyList(tag, "TileEntities")) return false;
-        if (hasNonEmptyList(tag, "entities") || hasNonEmptyList(tag, "Entities")) return false;
-        if (hasStructureData(tag, "structures", "starts", "References")) return false;
-        if (hasStructureData(tag, "Structures", "Starts", "References")) return false;
-        if (hasNonEmptyList(tag, "block_ticks") || hasNonEmptyList(tag, "fluid_ticks")
-                || hasNonEmptyList(tag, "TileTicks") || hasNonEmptyList(tag, "LiquidTicks")) return false;
-        if (hasNonEmptyNestedListList(tag, "PostProcessing")) return false;
-        if (hasNonEmptyCompound(tag, "UpgradeData") || hasNonEmptyCompound(tag, "upgradeData")) return false;
+        if (!nbt.hasNumeric(tag, "InhabitedTime")) return false;
+        if (nbt.getLongOrDefault(tag, "InhabitedTime", 0L) != 0L) return false;
+        if (hasNonEmptyList(nbt, tag, "block_entities") || hasNonEmptyList(nbt, tag, "TileEntities")) return false;
+        if (hasNonEmptyList(nbt, tag, "entities") || hasNonEmptyList(nbt, tag, "Entities")) return false;
+        if (hasStructureData(nbt, tag, "structures", "starts", "References")) return false;
+        if (hasStructureData(nbt, tag, "Structures", "Starts", "References")) return false;
+        if (hasNonEmptyList(nbt, tag, "block_ticks") || hasNonEmptyList(nbt, tag, "fluid_ticks")
+                || hasNonEmptyList(nbt, tag, "TileTicks") || hasNonEmptyList(nbt, tag, "LiquidTicks")) return false;
+        if (hasNonEmptyNestedListList(nbt, tag, "PostProcessing")) return false;
+        if (hasNonEmptyCompound(nbt, tag, "UpgradeData") || hasNonEmptyCompound(nbt, tag, "upgradeData")) return false;
         return true;
     }
 
-    private static boolean hasNonEmptyList(CompoundTag tag, String key) {
-        if (!tag.contains(key, Tag.TAG_LIST)) return false;
-        ListTag list = tag.getList(key, Tag.TAG_END);
+    private static boolean hasNonEmptyList(ChunkNbtAdapter nbt, CompoundTag tag, String key) {
+        ListTag list = nbt.getListOrEmpty(tag, key, Tag.TAG_END);
         return !list.isEmpty();
     }
 
-    private static boolean hasNonEmptyNestedListList(CompoundTag tag, String key) {
-        if (!tag.contains(key, Tag.TAG_LIST)) return false;
-        ListTag outer = tag.getList(key, Tag.TAG_LIST);
+    private static boolean hasNonEmptyNestedListList(ChunkNbtAdapter nbt, CompoundTag tag, String key) {
+        ListTag outer = nbt.getListOrEmpty(tag, key, Tag.TAG_LIST);
         for (int i = 0; i < outer.size(); i++) {
             Tag entry = outer.get(i);
             if (entry instanceof ListTag list && !list.isEmpty()) {
@@ -502,25 +499,25 @@ public final class ChunkPruner {
         return false;
     }
 
-    private static boolean hasNonEmptyCompound(CompoundTag tag, String key) {
-        return tag.contains(key, Tag.TAG_COMPOUND) && !tag.getCompound(key).isEmpty();
+    private static boolean hasNonEmptyCompound(ChunkNbtAdapter nbt, CompoundTag tag, String key) {
+        return nbt.hasCompound(tag, key) && !nbt.getCompoundOrEmpty(tag, key).isEmpty();
     }
 
-    private static boolean hasStructureData(CompoundTag tag, String structuresKey, String startsKey, String referencesKey) {
-        if (!tag.contains(structuresKey, Tag.TAG_COMPOUND)) return false;
-        CompoundTag structures = tag.getCompound(structuresKey);
+    private static boolean hasStructureData(ChunkNbtAdapter nbt, CompoundTag tag,
+                                            String structuresKey, String startsKey, String referencesKey) {
+        if (!nbt.hasCompound(tag, structuresKey)) return false;
+        CompoundTag structures = nbt.getCompoundOrEmpty(tag, structuresKey);
 
-        if (structures.contains(startsKey, Tag.TAG_COMPOUND) && !structures.getCompound(startsKey).isEmpty()) {
+        if (nbt.hasCompound(structures, startsKey) && !nbt.getCompoundOrEmpty(structures, startsKey).isEmpty()) {
             return true;
         }
 
-        if (!structures.contains(referencesKey, Tag.TAG_COMPOUND)) return false;
-        CompoundTag references = structures.getCompound(referencesKey);
-        Set<String> keys = references.getAllKeys();
+        if (!nbt.hasCompound(structures, referencesKey)) return false;
+        CompoundTag references = nbt.getCompoundOrEmpty(structures, referencesKey);
+        Set<String> keys = nbt.keySet(references);
         for (String key : keys) {
-            if (references.contains(key, Tag.TAG_LONG_ARRAY)) {
-                LongArrayTag arr = (LongArrayTag) references.get(key);
-                if (arr != null && arr.size() > 0) return true;
+            if (nbt.hasLongArray(references, key)) {
+                if (nbt.hasNonEmptyLongArray(references, key)) return true;
             } else {
                 // Unknown structure reference payload: be conservative.
                 return true;

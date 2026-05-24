@@ -3,6 +3,8 @@ package com.bugfunbug.linearreader;
 import com.bugfunbug.linearreader.config.LinearConfig;
 import com.bugfunbug.linearreader.linear.LinearRegionFile;
 import com.bugfunbug.linearreader.linear.LinearCoreTestHooks;
+import net.minecraft.SharedConstants;
+import net.minecraft.server.Bootstrap;
 
 import java.io.IOException;
 import java.net.URISyntaxException;
@@ -15,9 +17,15 @@ import java.util.Objects;
 
 public final class LinearTestSupport {
 
+    private static volatile boolean minecraftBootstrapped;
+
     private LinearTestSupport() {}
 
     public static void resetState() {
+        ensureMinecraftBootstrapped();
+        LinearCoreTestHooks.clearZstdStartupFailure();
+        LinearReader.installForTests();
+
         StoragePolicyManager.setTestNowNs(null);
         StoragePolicyManager.setTestCurrentTimeMs(null);
         LinearCoreTestHooks.setFixedClock(null, null);
@@ -48,6 +56,20 @@ public final class LinearTestSupport {
         }
         LinearRegionFile.shutdownBackupExecutor();
         StoragePolicyManager.reset(false);
+    }
+
+    private static void ensureMinecraftBootstrapped() {
+        if (minecraftBootstrapped) {
+            return;
+        }
+        synchronized (LinearTestSupport.class) {
+            if (minecraftBootstrapped) {
+                return;
+            }
+            SharedConstants.tryDetectVersion();
+            Bootstrap.bootStrap();
+            minecraftBootstrapped = true;
+        }
     }
 
     public static void setFixedClock(long nowNs) {
