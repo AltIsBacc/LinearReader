@@ -21,3 +21,7 @@ edge cases. **Backup your worlds before installing LinearReader.**
 and verified that it all works as intended. If you run into any
 issues please report them on my [GitHub](https://github.com/Bugfunbug/LinearReader/issues)
 and I will try to resolve them as fast as possible.
+
+#### Download Links:
+CurseForge: https://www.curseforge.com/minecraft/mc-mods/linearreader  
+Modrinth: https://modrinth.com/mod/linearreader
