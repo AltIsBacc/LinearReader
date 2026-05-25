@@ -6,6 +6,7 @@ def fabric1201Target = project(':targets:fabric_1_20_to_1_20_1')
 def fabric1202To1214Target = project(':targets:fabric_1_20_2_to_1_21_4')
 def fabric1215To12110Target = project(':targets:fabric_1_21_5_to_1_21_10')
 def forge1201Target = project(':targets:forge_1_20_to_1_20_1')
+def neoforge1211Target = project(':targets:neoforge_1_21_1')
 
 tasks.register('compileAll') {
     group = 'linearreader'
@@ -14,6 +15,7 @@ tasks.register('compileAll') {
     dependsOn fabric1202To1214Target.tasks.named('compileJava')
     dependsOn fabric1215To12110Target.tasks.named('compileJava')
     dependsOn forge1201Target.tasks.named('compileJava')
+    dependsOn neoforge1211Target.tasks.named('compileJava')
 }
 
 tasks.register('compileFabric') {
@@ -26,14 +28,21 @@ tasks.register('compileFabric') {
 
 tasks.register('compileForgeNeoForge') {
     group = 'linearreader'
-    description = 'Legacy alias for compileForge.'
+    description = 'Compiles all live Forge and NeoForge targets.'
     dependsOn tasks.named('compileForge')
+    dependsOn tasks.named('compileNeoForge')
 }
 
 tasks.register('compileForge') {
     group = 'linearreader'
     description = 'Compiles the Forge target.'
     dependsOn forge1201Target.tasks.named('compileJava')
+}
+
+tasks.register('compileNeoForge') {
+    group = 'linearreader'
+    description = 'Compiles the NeoForge target.'
+    dependsOn neoforge1211Target.tasks.named('compileJava')
 }
 
 tasks.register('buildFabric') {
@@ -46,14 +55,21 @@ tasks.register('buildFabric') {
 
 tasks.register('buildForgeNeoForge') {
     group = 'linearreader'
-    description = 'Legacy alias for buildForge.'
+    description = 'Builds all live Forge and NeoForge targets.'
     dependsOn tasks.named('buildForge')
+    dependsOn tasks.named('buildNeoForge')
 }
 
 tasks.register('buildForge') {
     group = 'linearreader'
     description = 'Builds the Forge target.'
     dependsOn forge1201Target.tasks.named('build')
+}
+
+tasks.register('buildNeoForge') {
+    group = 'linearreader'
+    description = 'Builds the NeoForge target.'
+    dependsOn neoforge1211Target.tasks.named('build')
 }
 
 tasks.register('cleanFabric') {
@@ -66,14 +82,21 @@ tasks.register('cleanFabric') {
 
 tasks.register('cleanForgeNeoForge') {
     group = 'linearreader'
-    description = 'Legacy alias for cleanForge.'
+    description = 'Cleans all live Forge and NeoForge targets.'
     dependsOn tasks.named('cleanForge')
+    dependsOn tasks.named('cleanNeoForge')
 }
 
 tasks.register('cleanForge') {
     group = 'linearreader'
     description = 'Cleans the Forge target.'
     dependsOn forge1201Target.tasks.named('clean')
+}
+
+tasks.register('cleanNeoForge') {
+    group = 'linearreader'
+    description = 'Cleans the NeoForge target.'
+    dependsOn neoforge1211Target.tasks.named('clean')
 }
 
 tasks.register('testFabric') {
@@ -86,14 +109,21 @@ tasks.register('testFabric') {
 
 tasks.register('testForgeNeoForge') {
     group = 'linearreader'
-    description = 'Legacy alias for testForge.'
+    description = 'Runs all live Forge and NeoForge target tests.'
     dependsOn tasks.named('testForge')
+    dependsOn tasks.named('testNeoForge')
 }
 
 tasks.register('testForge') {
     group = 'linearreader'
     description = 'Runs the Forge target tests.'
     dependsOn forge1201Target.tasks.named('test')
+}
+
+tasks.register('testNeoForge') {
+    group = 'linearreader'
+    description = 'Runs the NeoForge target tests.'
+    dependsOn neoforge1211Target.tasks.named('test')
 }
 
 tasks.register('generateTestCorpus') {
@@ -109,6 +139,7 @@ tasks.register('buildAll') {
     dependsOn fabric1202To1214Target.tasks.named('build')
     dependsOn fabric1215To12110Target.tasks.named('build')
     dependsOn forge1201Target.tasks.named('build')
+    dependsOn neoforge1211Target.tasks.named('build')
 }
 
 tasks.register('testAll') {
@@ -118,6 +149,7 @@ tasks.register('testAll') {
     dependsOn fabric1202To1214Target.tasks.named('test')
     dependsOn fabric1215To12110Target.tasks.named('test')
     dependsOn forge1201Target.tasks.named('test')
+    dependsOn neoforge1211Target.tasks.named('test')
 }
 
 tasks.register('cleanAll') {
@@ -127,6 +159,7 @@ tasks.register('cleanAll') {
     dependsOn fabric1202To1214Target.tasks.named('clean')
     dependsOn fabric1215To12110Target.tasks.named('clean')
     dependsOn forge1201Target.tasks.named('clean')
+    dependsOn neoforge1211Target.tasks.named('clean')
 }
 
 tasks.register('compileJava') {
@@ -181,5 +214,11 @@ tasks.register('collectJars', Copy) {
         include '*.jar'
         exclude '*-sources.jar', '*-javadoc.jar'
         into 'forge_1_20_to_1_20_1'
+    }
+
+    from(neoforge1211Target.layout.buildDirectory.dir('libs')) {
+        include '*.jar'
+        exclude '*-sources.jar', '*-javadoc.jar'
+        into 'neoforge_1_21_1'
     }
 }

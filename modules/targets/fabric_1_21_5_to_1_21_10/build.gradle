@@ -1,7 +1,7 @@
 import java.util.Properties
 
 plugins {
-    id 'fabric-loom' version '1.6-SNAPSHOT'
+    id 'fabric-loom' version '1.13.2'
     id 'maven-publish'
 }
 
