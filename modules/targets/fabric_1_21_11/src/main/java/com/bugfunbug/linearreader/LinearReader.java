@@ -2,9 +2,11 @@ package com.bugfunbug.linearreader;
 
 import com.bugfunbug.linearreader.mc12111.Minecraft12111Family;
 import com.bugfunbug.linearreader.targets.Fabric12111Target;
+import com.bugfunbug.linearreader.voxy.VoxyCompatClientCommands;
+import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.ModInitializer;
 
-public class LinearReader implements ModInitializer {
+public class LinearReader implements ModInitializer, ClientModInitializer {
 
     public static void installForTests() {
         LinearRuntime.install(Minecraft12111Family.INSTANCE);
@@ -13,5 +15,10 @@ public class LinearReader implements ModInitializer {
     @Override
     public void onInitialize() {
         Fabric12111Target.INSTANCE.onInitialize();
+    }
+
+    @Override
+    public void onInitializeClient() {
+        VoxyCompatClientCommands.register();
     }
 }

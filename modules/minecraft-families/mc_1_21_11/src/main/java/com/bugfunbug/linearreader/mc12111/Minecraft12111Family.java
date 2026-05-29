@@ -25,4 +25,9 @@ public final class Minecraft12111Family implements MinecraftFamily {
     public ChunkNbtAdapter chunkNbtAdapter() {
         return Minecraft12111ChunkNbtAdapter.INSTANCE;
     }
+
+    @Override
+    public boolean supportsVoxyMcaStaging() {
+        return true;
+    }
 }

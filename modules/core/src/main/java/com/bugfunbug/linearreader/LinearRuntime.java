@@ -182,6 +182,10 @@ public final class LinearRuntime {
         return minecraftFamily().chunkNbtAdapter();
     }
 
+    public static boolean supportsVoxyMcaStaging() {
+        return minecraftFamily().supportsVoxyMcaStaging();
+    }
+
     public static RegionFile openVanillaRegionFile(Path regionFilePath, Path regionFolder, boolean sync)
             throws IOException {
         return minecraftFamily().regionStorageHooks().openVanillaRegionFile(regionFilePath, regionFolder, sync);
