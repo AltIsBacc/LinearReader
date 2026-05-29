@@ -5,6 +5,7 @@ plugins {
 def fabric1201Target = project(':targets:fabric_1_20_to_1_20_1')
 def fabric1202To1214Target = project(':targets:fabric_1_20_2_to_1_21_4')
 def fabric1215To12110Target = project(':targets:fabric_1_21_5_to_1_21_10')
+def fabric12111Target = project(':targets:fabric_1_21_11')
 def forge1201Target = project(':targets:forge_1_20_to_1_20_1')
 def neoforge1211Target = project(':targets:neoforge_1_21_1')
 
@@ -14,6 +15,7 @@ tasks.register('compileAll') {
     dependsOn fabric1201Target.tasks.named('compileJava')
     dependsOn fabric1202To1214Target.tasks.named('compileJava')
     dependsOn fabric1215To12110Target.tasks.named('compileJava')
+    dependsOn fabric12111Target.tasks.named('compileJava')
     dependsOn forge1201Target.tasks.named('compileJava')
     dependsOn neoforge1211Target.tasks.named('compileJava')
 }
@@ -24,6 +26,7 @@ tasks.register('compileFabric') {
     dependsOn fabric1201Target.tasks.named('compileJava')
     dependsOn fabric1202To1214Target.tasks.named('compileJava')
     dependsOn fabric1215To12110Target.tasks.named('compileJava')
+    dependsOn fabric12111Target.tasks.named('compileJava')
 }
 
 tasks.register('compileForgeNeoForge') {
@@ -51,6 +54,7 @@ tasks.register('buildFabric') {
     dependsOn fabric1201Target.tasks.named('build')
     dependsOn fabric1202To1214Target.tasks.named('build')
     dependsOn fabric1215To12110Target.tasks.named('build')
+    dependsOn fabric12111Target.tasks.named('build')
 }
 
 tasks.register('buildForgeNeoForge') {
@@ -78,6 +82,7 @@ tasks.register('cleanFabric') {
     dependsOn fabric1201Target.tasks.named('clean')
     dependsOn fabric1202To1214Target.tasks.named('clean')
     dependsOn fabric1215To12110Target.tasks.named('clean')
+    dependsOn fabric12111Target.tasks.named('clean')
 }
 
 tasks.register('cleanForgeNeoForge') {
@@ -105,6 +110,7 @@ tasks.register('testFabric') {
     dependsOn fabric1201Target.tasks.named('test')
     dependsOn fabric1202To1214Target.tasks.named('test')
     dependsOn fabric1215To12110Target.tasks.named('test')
+    dependsOn fabric12111Target.tasks.named('test')
 }
 
 tasks.register('testForgeNeoForge') {
@@ -138,6 +144,7 @@ tasks.register('buildAll') {
     dependsOn fabric1201Target.tasks.named('build')
     dependsOn fabric1202To1214Target.tasks.named('build')
     dependsOn fabric1215To12110Target.tasks.named('build')
+    dependsOn fabric12111Target.tasks.named('build')
     dependsOn forge1201Target.tasks.named('build')
     dependsOn neoforge1211Target.tasks.named('build')
 }
@@ -148,6 +155,7 @@ tasks.register('testAll') {
     dependsOn fabric1201Target.tasks.named('test')
     dependsOn fabric1202To1214Target.tasks.named('test')
     dependsOn fabric1215To12110Target.tasks.named('test')
+    dependsOn fabric12111Target.tasks.named('test')
     dependsOn forge1201Target.tasks.named('test')
     dependsOn neoforge1211Target.tasks.named('test')
 }
@@ -158,6 +166,7 @@ tasks.register('cleanAll') {
     dependsOn fabric1201Target.tasks.named('clean')
     dependsOn fabric1202To1214Target.tasks.named('clean')
     dependsOn fabric1215To12110Target.tasks.named('clean')
+    dependsOn fabric12111Target.tasks.named('clean')
     dependsOn forge1201Target.tasks.named('clean')
     dependsOn neoforge1211Target.tasks.named('clean')
 }
@@ -208,6 +217,12 @@ tasks.register('collectJars', Copy) {
         include '*.jar'
         exclude '*-sources.jar', '*-javadoc.jar'
         into 'fabric_1_21_5_to_1_21_10'
+    }
+
+    from(fabric12111Target.layout.buildDirectory.dir('libs')) {
+        include '*.jar'
+        exclude '*-sources.jar', '*-javadoc.jar'
+        into 'fabric_1_21_11'
     }
 
     from(forge1201Target.layout.buildDirectory.dir('libs')) {

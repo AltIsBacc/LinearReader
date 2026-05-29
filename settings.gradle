@@ -34,6 +34,9 @@ project(":targets:fabric_1_20_2_to_1_21_4").projectDir = file("modules/targets/f
 include(":targets:fabric_1_21_5_to_1_21_10")
 project(":targets:fabric_1_21_5_to_1_21_10").projectDir = file("modules/targets/fabric_1_21_5_to_1_21_10")
 
+include(":targets:fabric_1_21_11")
+project(":targets:fabric_1_21_11").projectDir = file("modules/targets/fabric_1_21_11")
+
 include(":targets:forge_1_20_to_1_20_1")
 project(":targets:forge_1_20_to_1_20_1").projectDir = file("modules/targets/forge_1_20_to_1_20_1")
 

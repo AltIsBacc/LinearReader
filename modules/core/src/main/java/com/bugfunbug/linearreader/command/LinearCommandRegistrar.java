@@ -22,17 +22,19 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 public final class LinearCommandRegistrar {
 
     private LinearCommandRegistrar() {}
 
-    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+    public static void register(CommandDispatcher<CommandSourceStack> dispatcher,
+                                Predicate<CommandSourceStack> permissionCheck) {
 
         dispatcher.register(
                 Commands.literal("linearreader")
-                        .requires(src -> src.hasPermission(2))
+                        .requires(permissionCheck)
                         .then(Commands.literal("cache_info")
                                 .executes(LinearCommandRegistrar::executeInfo))
                         .then(Commands.literal("storage")

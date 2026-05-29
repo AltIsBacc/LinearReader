@@ -7,6 +7,6 @@ public final class LinearCommand {
     private LinearCommand() {}
 
     public static void register(RegisterCommandsEvent event) {
-        LinearCommandRegistrar.register(event.getDispatcher());
+        LinearCommandRegistrar.register(event.getDispatcher(), source -> source.hasPermission(2));
     }
 }

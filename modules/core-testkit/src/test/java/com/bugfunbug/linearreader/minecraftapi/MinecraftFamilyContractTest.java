@@ -1,6 +1,9 @@
 package com.bugfunbug.linearreader.minecraftapi;
 
+import net.minecraft.SharedConstants;
+import net.minecraft.server.Bootstrap;
 import net.minecraft.world.level.ChunkPos;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
@@ -16,8 +19,15 @@ class MinecraftFamilyContractTest {
     private static final List<String> FAMILY_CLASS_NAMES = List.of(
             "com.bugfunbug.linearreader.mc1201.Minecraft1201Family",
             "com.bugfunbug.linearreader.mc1202to1214.Minecraft1202To1214Family",
-            "com.bugfunbug.linearreader.mc1215to12110.Minecraft1215To12110Family"
+            "com.bugfunbug.linearreader.mc1215to12110.Minecraft1215To12110Family",
+            "com.bugfunbug.linearreader.mc12111.Minecraft12111Family"
     );
+
+    @BeforeAll
+    static void bootstrapMinecraft() {
+        SharedConstants.tryDetectVersion();
+        Bootstrap.bootStrap();
+    }
 
     @Test
     void availableFamiliesExposeBothContracts() {
