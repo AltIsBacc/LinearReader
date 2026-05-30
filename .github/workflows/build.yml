@@ -9,6 +9,23 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        loader:
+          - name: Fabric
+            task: buildFabric
+            artifact: fabric
+            paths: modules/targets/fabric_*/build/libs/*.jar
+          - name: Forge
+            task: buildForge
+            artifact: forge
+            paths: modules/targets/forge_*/build/libs/*.jar
+          - name: NeoForge
+            task: buildNeoForge
+            artifact: neoforge
+            paths: modules/targets/neoforge_*/build/libs/*.jar
+
+    name: Build ${{ matrix.loader.name }}
 
     steps:
       - uses: actions/checkout@v4
@@ -21,13 +38,18 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
-      - name: Build all targets
-        run: ./gradlew collectJars
+      - name: Build ${{ matrix.loader.name }}
+        run: ./gradlew ${{ matrix.loader.task }}
 
-      - name: Upload jars
+      - name: Upload ${{ matrix.loader.name }} jars
         uses: actions/upload-artifact@v4
         with:
-          name: linearreader-jars
-          path: build/collected-jars/**/*.jar
+          name: jars-${{ matrix.loader.artifact }}
+          path: ${{ matrix.loader.paths }}
+          exclude: |
+            **/*-sources.jar
+            **/*-javadoc.jar
           if-no-files-found: error
