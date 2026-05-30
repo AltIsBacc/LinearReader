@@ -212,13 +212,26 @@ public final class ZstdSupport {
             if (in == null) {
                 throw new IOException("[LinearReader] Missing embedded zstd-jni resource: " + EMBEDDED_JAR_RESOURCE);
             }
-            Path tempDir = Files.createTempDirectory("linearreader-zstd");
+            Path tempBase = resolveTempBase();
+            Path tempDir = Files.createTempDirectory(tempBase, "linearreader-zstd");
             Path jarPath = tempDir.resolve("zstd-jni.jar");
             Files.copy(in, jarPath, StandardCopyOption.REPLACE_EXISTING);
             tempDir.toFile().deleteOnExit();
             jarPath.toFile().deleteOnExit();
             return jarPath;
         }
+    }
+
+    private static Path resolveTempBase() {
+        String tmpdir = System.getenv("TMPDIR");
+        if (tmpdir != null && !tmpdir.isBlank()) {
+            Path base = Path.of(tmpdir);
+            LinearRuntime.LOGGER.debug("[LinearReader] Using TMPDIR for zstd-jni extraction: {}", base);
+            return base;
+        }
+        Path base = Path.of("/tmp");
+        LinearRuntime.LOGGER.debug("[LinearReader] TMPDIR not set, falling back to {}", base);
+        return base;
     }
 
     public static final class ZstdUnavailableException extends IllegalStateException {
